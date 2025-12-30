@@ -16,23 +16,23 @@ from itertools import product
 init(autoreset=True)
 
 # --- CẤU HÌNH CỐ ĐỊNH ---
-SYMBOLS = ["btcusdt","ethusdt"]
-TIMEFRAME = '3m'
-BACKTEST_DAYS = 3
+SYMBOLS = ["btcusdt","ethusdt","solusdt", "bnbusdt", "zecusdt","dogeusdt","xrpusdt"]
+BACKTEST_DAYS = 7
 INIT_CAPITAL = 200.0
 LEVERAGE = 20
 FEE_RATE = 0.05 / 100
 
 # --- CÁC TỔ HỢP THAM SỐ CẦN TEST ---
 PARAM_GRID = {
-    'margin': [2, 5, 10],              # Margin mỗi lệnh
+    'timeframe': ['3m', '5m', '15m',"30m","1h"],  # Khung giờ
+    'margin': [10, 20],              # Margin mỗi lệnh
     'stop_loss': [20, 50, 100],        # Stop Loss (USDT)
     'trailing_trigger': [0.3, 0.5, 1.0],  # Trailing trigger (%)
     'trailing_callback': [0.1],   # Trailing callback (%)
     'bb_period': [20, 30],             # BB period
     'bb_std': [2, 2.5],              # BB std deviation
     'rsi_period': [7, 9, 14],             # RSI period
-    'stoch_oversold': [ 25],        # StochRSI oversold threshold
+    'stoch_oversold': [25],        # StochRSI oversold threshold
     'stoch_overbought': [75],      # StochRSI overbought threshold
     'max_dca': [10],              # Số lần DCA tối đa (0 = tắt DCA)
 }
@@ -349,15 +349,21 @@ def run_optimizer():
     
     print(f"{Fore.CYAN}📊 Tổng số tổ hợp cần test: {total_combinations}")
     print(f"📈 Coins: {', '.join(SYMBOLS)}")
-    print(f"⏱️  Timeframe: {TIMEFRAME} | Days: {BACKTEST_DAYS}{Style.RESET_ALL}\n")
+    print(f"⏱️  Timeframes: {PARAM_GRID.get('timeframe', ['3m'])} | Days: {BACKTEST_DAYS}{Style.RESET_ALL}\n")
     
-    # Tải dữ liệu 1 lần
+    # Tải dữ liệu cho tất cả timeframe
     print(f"{Fore.YELLOW}📥 Đang tải dữ liệu lịch sử...{Style.RESET_ALL}")
     end_time = datetime.now()
     start_time = end_time - timedelta(days=BACKTEST_DAYS)
-    data_cache = fetch_data_for_symbols(SYMBOLS, start_time, end_time, TIMEFRAME)
     
-    if not data_cache:
+    # Cache dữ liệu theo timeframe
+    timeframes = PARAM_GRID.get('timeframe', ['3m'])
+    data_cache_by_tf = {}
+    for tf in timeframes:
+        print(f"\n{Fore.YELLOW}--- Timeframe: {tf} ---{Style.RESET_ALL}")
+        data_cache_by_tf[tf] = fetch_data_for_symbols(SYMBOLS, start_time, end_time, tf)
+    
+    if not any(data_cache_by_tf.values()):
         print(f"{Fore.RED}❌ Không có dữ liệu để test!{Style.RESET_ALL}")
         return
     
@@ -376,6 +382,10 @@ def run_optimizer():
         # Progress
         if idx % 10 == 0 or idx == 1:
             print(f"{Fore.CYAN}  Testing {idx}/{total_combinations}...{Style.RESET_ALL}")
+        
+        # Lấy data cache cho timeframe tương ứng
+        tf = config.get('timeframe', '3m')
+        data_cache = data_cache_by_tf.get(tf, {})
         
         result = run_single_config(config, SYMBOLS, data_cache)
         result['config'] = config
@@ -396,7 +406,8 @@ def run_optimizer():
     
     for rank, r in enumerate(results[:20], 1):
         c = r['config']
-        config_str = f"M={c['margin']}, SL={c['stop_loss']}, TT={c['trailing_trigger']}%, BB={c['bb_period']}, RSI={c['rsi_period']}, DCA={c['max_dca']}"
+        tf = c.get('timeframe', '3m')
+        config_str = f"TF={tf}, M={c['margin']}, SL={c['stop_loss']}, TT={c['trailing_trigger']}%, BB={c['bb_period']}, RSI={c['rsi_period']}, DCA={c['max_dca']}"
         
         roi_color = Fore.GREEN if r['roi'] >= 0 else Fore.RED
         print(f"{rank:<5} | {roi_color}{r['roi']:>+8.2f}%{Style.RESET_ALL} | {r['win_rate']:>8.1f}% | {r['trades']:<7} | {r['max_dd']:>6.2f}% | {r['pnl']:>+10.2f}u | {config_str}")
@@ -443,6 +454,7 @@ def run_optimizer():
         print(f"    Max Drawdown: {best['max_dd']:.2f}%")
         
         print(f"\n{Fore.CYAN}⚙️  Cấu hình:")
+        print(f"    TIMEFRAME = '{c.get('timeframe', '3m')}'")
         print(f"    MARGIN_PER_ORDER = {c['margin']}")
         print(f"    STOP_LOSS_USDT = {c['stop_loss']}")
         print(f"    TRAILING_TRIGGER_PCT = {c['trailing_trigger']} / 100")
